@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+**/dist/
+**/dist.root-bak/
+**/*.root-bak/
+.next/
+.turbo/
+*.tsbuildinfo
+**/proxy-scraper
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+config.toml
+
+# Logs and coverage
+*.log
+coverage/
+
+# Local runtime data
+.dev-data/
+mitm-records/
+backups/
+apps/proxy/tools/scraper/*.txt
+
+# Local agent/editor files
+.claude/
+plan.md
+.DS_Store
+
+# Ad-hoc local scripts
+/test*.sh

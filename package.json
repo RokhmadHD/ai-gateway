@@ -1,0 +1,48 @@
+{
+  "name": "ai-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Gateway — multi-tenant LLM proxy + admin API + dashboard (monorepo)",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @ai-gateway/db db:generate",
+    "db:migrate": "pnpm --filter @ai-gateway/db db:migrate",
+    "db:seed": "pnpm --filter @ai-gateway/db db:seed",
+    "db:seed-owner": "pnpm --filter @ai-gateway/admin exec tsx scripts/seed-owner.ts",
+    "db:migrate-accounts": "pnpm --filter @ai-gateway/admin exec tsx scripts/migrate-accounts-to-tenant.ts",
+    "db:studio": "pnpm --filter @ai-gateway/db db:studio",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f postgres redis",
+    "dev:local:infra": "docker compose up -d postgres redis",
+    "dev:local:stop-app": "docker compose --profile app stop admin proxy dashboard",
+    "dev:local:admin": "sh -c 'set -a; [ -f .env ] && . ./.env; set +a; NODE_ENV=development DATABASE_URL=\"postgres://${POSTGRES_USER:-ai_gateway}:${POSTGRES_PASSWORD:-ai_gateway_dev}@localhost:5433/${POSTGRES_DB:-ai_gateway}\" REDIS_URL=\"redis://localhost:6380\" CONFIG_SOURCE=\"${CONFIG_SOURCE:-db}\" TENANT_SLUG=\"${TENANT_SLUG:-default}\" ADMIN_TOKEN=\"${ADMIN_TOKEN:-dev-admin-token}\" PORT=7780 HOST=0.0.0.0 BETTER_AUTH_URL=\"${BETTER_AUTH_URL:-http://localhost:7780}\" CORS_ORIGIN=\"${CORS_ORIGIN:-http://localhost:7790,http://localhost:3000}\" KIRO_ACCOUNTS_DIR=\"${KIRO_ACCOUNTS_DIR:-$PWD/.dev-data/kiro-accounts}\" GEMINI_ACCOUNTS_DIR=\"${GEMINI_ACCOUNTS_DIR:-$PWD/.dev-data/gemini-accounts}\" PROXY_SCRAPER_BIN=\"${PROXY_SCRAPER_BIN:-$PWD/apps/proxy/tools/scraper/proxy-scraper}\" pnpm --filter @ai-gateway/admin dev'",
+    "dev:local:proxy": "sh -c 'set -a; [ -f .env ] && . ./.env; set +a; NODE_ENV=development DATABASE_URL=\"postgres://${POSTGRES_USER:-ai_gateway}:${POSTGRES_PASSWORD:-ai_gateway_dev}@localhost:5433/${POSTGRES_DB:-ai_gateway}\" REDIS_URL=\"redis://localhost:6380\" CONFIG_SOURCE=\"${CONFIG_SOURCE:-db}\" TENANT_SLUG=\"${TENANT_SLUG:-default}\" PORT=7777 HOST=0.0.0.0 LOG_LEVEL=\"${LOG_LEVEL:-info}\" KIRO_ACCOUNTS_DIR=\"${KIRO_ACCOUNTS_DIR:-$PWD/.dev-data/kiro-accounts}\" GEMINI_ACCOUNTS_DIR=\"${GEMINI_ACCOUNTS_DIR:-$PWD/.dev-data/gemini-accounts}\" pnpm --filter @ai-gateway/proxy dev'",
+    "dev:local:dashboard": "sh -c 'set -a; [ -f .env ] && . ./.env; set +a; NODE_ENV=development NEXT_PUBLIC_ADMIN_URL=\"${DASHBOARD_ADMIN_URL:-}\" pnpm --filter @ai-gateway/dashboard dev'",
+    "dev:local": "sh -c 'trap \"kill 0\" INT TERM EXIT; pnpm run dev:local:admin & pnpm run dev:local:proxy & pnpm run dev:local:dashboard & wait'",
+    "app:up": "docker compose --profile app up -d",
+    "app:down": "docker compose --profile app down",
+    "app:logs": "docker compose --profile app logs -f",
+    "app:build": "docker compose --profile app build",
+    "dash:dev": "docker compose stop dashboard 2>/dev/null; docker compose run --rm -p 7790:7790 -w /workspace/apps/dashboard db-tools pnpm dev",
+    "dash:rebuild": "docker compose --profile app build dashboard && docker compose --profile app up -d dashboard",
+    "admin:dev": "docker compose stop admin 2>/dev/null; docker compose run --rm -p 7780:7780 -w /workspace/apps/admin db-tools pnpm dev",
+    "admin:rebuild": "docker compose --profile app build admin && docker compose --profile app up -d admin",
+    "proxy:dev": "docker compose stop proxy 2>/dev/null; docker compose run --rm -p 7777:7777 -w /workspace/apps/proxy db-tools pnpm dev",
+    "proxy:rebuild": "docker compose --profile app build proxy && docker compose --profile app up -d proxy"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

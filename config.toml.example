@@ -1,0 +1,35 @@
+[server]
+port = 3000
+host = "0.0.0.0"
+log_level = "info"
+pretty_logs = false
+
+[providers]
+default = "openai"
+
+[providers.openai]
+api_key = ""
+
+[providers.anthropic]
+api_key = ""
+
+# Custom OpenAI-compatible providers (Ollama, Groq, Together, Azure, etc.)
+# [providers.custom.ollama]
+# base_url = "http://localhost:11434/v1"
+# api_key = ""
+
+# [providers.custom.groq]
+# base_url = "https://api.groq.com/openai/v1"
+# api_key = "gsk_..."
+
+# Kiro (Amazon Q CodeWhisperer free-tier via kiro-cli OAuth session)
+# Run `kiro-cli login` once, OR add accounts via device-auth flow (see scripts/kiro-add-account.ts)
+# Multi-account: rotation across accounts; failover on 401/429.
+# [providers.custom.kiro]
+# endpoint_type = "kiro"
+# default_model = "claude-sonnet-4.5"  # auto | claude-sonnet-4.5 | claude-sonnet-4 | claude-haiku-4.5 | deepseek-3.2 | minimax-m2.5
+# # pick ONE source of accounts:
+# account_dir   = "~/.kiro-accounts"   # scan dir for *.json (recommended for multi-account)
+# token_caches  = ["~/.aws/sso/cache/kiro-auth-token-cli.json"]  # explicit list
+# token_cache   = "~/.aws/sso/cache/kiro-auth-token-cli.json"    # single (legacy)
+# rotation = { max_retries = 3 }  # how many accounts to try per request
