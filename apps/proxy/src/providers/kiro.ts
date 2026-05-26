@@ -261,6 +261,11 @@ function safeParseJSON(s: string | undefined | null): unknown {
   try { return JSON.parse(s) } catch { return {} }
 }
 
+/** Sanitize tool IDs to match Kiro's ^[a-zA-Z0-9_-]+$ pattern */
+function sanitizeToolId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_')
+}
+
 // Kiro has no system role. Prepend system content to first user message.
 function buildConversation(
   req: ChatRequest,
@@ -307,7 +312,7 @@ function buildConversation(
     if (m.role === 'tool') {
       const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
       pendingResults.push({
-        toolUseId: m.tool_call_id ?? '',
+        toolUseId: sanitizeToolId(m.tool_call_id ?? ''),
         content: [{ text }],
         status: 'success',
       })
@@ -320,7 +325,7 @@ function buildConversation(
       pendingResults = []
     } else if (m.role === 'assistant') {
       const toolUses = m.tool_calls?.map((tc) => ({
-        toolUseId: tc.id,
+        toolUseId: sanitizeToolId(tc.id),
         name: tc.function.name,
         input: safeParseJSON(tc.function.arguments),
       }))

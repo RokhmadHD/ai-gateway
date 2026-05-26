@@ -29,7 +29,7 @@ const chatBodySchema = {
             type: 'string',
             enum: ['system', 'user', 'assistant', 'tool'],
           },
-          content: { type: ['string', 'null'] },
+          content: {},
           name: { type: 'string' },
           tool_call_id: { type: 'string' },
           tool_calls: {
