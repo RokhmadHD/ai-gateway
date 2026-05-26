@@ -452,12 +452,19 @@ function safeParseObject(s: string | undefined | null): Record<string, unknown> 
   } catch { return {} }
 }
 
+function contentToText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (content == null) return ''
+  return JSON.stringify(content)
+}
+
 function buildContents(messages: ChatMessage[]): {
   systemInstruction?: { role: 'user'; parts: GeminiPart[] }
   contents: GeminiContent[]
 } {
   let systemText = ''
   const contents: GeminiContent[] = []
+  const signedToolCallIds = new Set<string>()
   const pushUserParts = (parts: GeminiPart[]) => {
     if (parts.length === 0) return
     const last = contents[contents.length - 1]
@@ -466,14 +473,18 @@ function buildContents(messages: ChatMessage[]): {
   }
   for (const m of messages) {
     if (m.role === 'system') {
-      systemText += (systemText ? '\n\n' : '') + (typeof m.content === 'string' ? m.content : '')
+      systemText += (systemText ? '\n\n' : '') + contentToText(m.content)
       continue
     }
     if (m.role === 'tool') {
       const name = findToolCallName(messages, m.tool_call_id ?? '')
-      const { id: decodedId } = decodeIdAndSig(m.tool_call_id ?? '')
+      const { id: decodedId, sig } = decodeIdAndSig(m.tool_call_id ?? '')
+      const text = contentToText(m.content)
+      if (!sig && !signedToolCallIds.has(decodedId)) {
+        pushUserParts([{ text: `Tool result for ${name} (${decodedId}):\n${text}` }])
+        continue
+      }
       let response: Record<string, unknown>
-      const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
       try {
         const parsed = JSON.parse(text)
         response =
@@ -487,27 +498,33 @@ function buildContents(messages: ChatMessage[]): {
       continue
     }
     if (m.role === 'user') {
-      const text = typeof m.content === 'string' ? m.content : ''
+      const text = contentToText(m.content)
       pushUserParts(text ? [{ text }] : [{ text: '' }])
       continue
     }
     // assistant
     const parts: GeminiPart[] = []
-    let assistantSig: string | undefined
-    if (typeof m.content === 'string' && m.content.length > 0) {
-      parts.push({ text: m.content })
+    const assistantText = contentToText(m.content)
+    if (assistantText.length > 0) {
+      parts.push({ text: assistantText })
     }
     if (m.tool_calls) {
       for (let ti = 0; ti < m.tool_calls.length; ti++) {
         const tc = m.tool_calls[ti]
-        const { sig } = decodeIdAndSig(tc.id)
-        if (sig && !assistantSig) assistantSig = sig
+        const { id: decodedId, sig } = decodeIdAndSig(tc.id)
+        if (!sig) {
+          parts.push({
+            text: `Assistant requested tool call ${tc.function.name} (${decodedId}) with arguments:\n${tc.function.arguments || '{}'}`,
+          })
+          continue
+        }
+        signedToolCallIds.add(decodedId)
         const part: GeminiPart = {
           functionCall: { name: tc.function.name, args: safeParseObject(tc.function.arguments) },
         }
         // Upstream emits thoughtSignature on the SAME part as the functionCall.
-        // Stash it on the first functionCall part so the model accepts the turn.
-        if (ti === 0 && assistantSig) part.thoughtSignature = assistantSig
+        // Restore it on signed history turns so the model accepts the turn.
+        part.thoughtSignature = sig
         parts.push(part)
       }
     }
