@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthGate } from "@/components/AuthGate";
 import { trpc } from "@/lib/trpc";
 import {
@@ -30,6 +30,7 @@ type SourceFilter = "all" | "manual" | "scraper";
 function Proxies() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const list = trpc.proxies.list.useQuery({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -47,6 +48,13 @@ function Proxies() {
       stats.refetch();
     },
   });
+  const deleteMany = trpc.proxies.deleteMany.useMutation({
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      list.refetch();
+      stats.refetch();
+    },
+  });
   const scrapeNow = trpc.proxies.scrapeNow.useMutation({
     onSuccess: () => scrapeStatus.refetch(),
   });
@@ -60,6 +68,18 @@ function Proxies() {
   const running = scrapeStatus.data?.running ?? false;
   const lastRun = scrapeStatus.data?.lastRun ?? null;
   const progress = scrapeStatus.data?.progress ?? null;
+  const visibleIds = list.data?.map((p) => p.id) ?? [];
+  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (!list.data) return prev;
+      const visible = new Set(list.data.map((p) => p.id));
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [list.data]);
 
   // Auto-refetch list while a run is in flight (and once when it finishes).
   const [wasRunning, setWasRunning] = useState(false);
@@ -180,7 +200,7 @@ function Proxies() {
                   <span className="font-mono text-(--color-success)">{lastRun.alive}</span>
                 </div>
                 <div>
-                  <span className="text-(--color-text-muted)">Inserted (this tenant):</span>{" "}
+                  <span className="text-(--color-text-muted)">Updated (this tenant):</span>{" "}
                   <span className="font-mono">
                     {Object.values(lastRun.insertedByTenant).reduce((a, b) => a + b, 0)}
                   </span>
@@ -247,6 +267,28 @@ function Proxies() {
               <option value="scraper">scraper</option>
             </Select>
           </label>
+          <div className="ml-auto flex items-center gap-2">
+            {selectedVisibleCount > 0 && (
+              <span className="text-xs text-(--color-text-muted)">
+                {selectedVisibleCount} selected
+              </span>
+            )}
+            <Button
+              variant="danger"
+              disabled={selectedVisibleCount === 0 || deleteMany.isPending}
+              onClick={() => {
+                const ids = visibleIds.filter((id) => selectedIds.has(id));
+                if (
+                  ids.length > 0 &&
+                  confirm(`Delete ${ids.length} selected prox${ids.length === 1 ? "y" : "ies"}?`)
+                ) {
+                  deleteMany.mutate({ ids });
+                }
+              }}
+            >
+              Delete selected
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -265,6 +307,24 @@ function Proxies() {
             <table className="min-w-[860px] w-full text-sm">
               <thead>
                 <tr className="text-left text-(--color-text-muted) border-b border-(--color-border)">
+                  <th className="py-2 pr-3 font-medium w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible proxies"
+                      checked={allVisibleSelected}
+                      onChange={(e) => {
+                        const checked = e.currentTarget.checked;
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          for (const id of visibleIds) {
+                            if (checked) next.add(id);
+                            else next.delete(id);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                  </th>
                   <th className="py-2 pr-3 font-medium">Endpoint</th>
                   <th className="py-2 pr-3 font-medium">Type</th>
                   <th className="py-2 pr-3 font-medium">Status</th>
@@ -278,6 +338,22 @@ function Proxies() {
               <tbody>
                 {list.data.map((p) => (
                   <tr key={p.id} className="border-b border-(--color-border)/50">
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select proxy ${p.type}://${p.host}:${p.port}`}
+                        checked={selectedIds.has(p.id)}
+                        onChange={(e) => {
+                          const checked = e.currentTarget.checked;
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.add(p.id);
+                            else next.delete(p.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </td>
                     <td className="py-2 pr-3 font-mono">
                       {p.host}:{p.port}
                       {p.label && (

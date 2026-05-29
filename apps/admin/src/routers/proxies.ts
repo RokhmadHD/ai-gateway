@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getDb, schema } from "@ai-gateway/db";
 import { adminProcedure, memberProcedure, router } from "../trpc";
@@ -114,6 +114,20 @@ export const proxiesRouter = router({
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
       await notifyConfigChange(`admin/${ctx.admin.user.email}`);
       return { ok: true, id: row.id };
+    }),
+
+  deleteMany: adminProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(50_000) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const rows = await db
+        .delete(proxies)
+        .where(and(eq(proxies.tenantId, ctx.admin.tenantId), inArray(proxies.id, input.ids)))
+        .returning({ id: proxies.id });
+      if (rows.length > 0) {
+        await notifyConfigChange(`admin/${ctx.admin.user.email}`);
+      }
+      return { ok: true, deleted: rows.length, ids: rows.map((r) => r.id) };
     }),
 
   stats: memberProcedure.query(async ({ ctx }) => {

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFile, unlink, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@ai-gateway/db";
 import { notifyConfigChange } from "../notifier";
 
@@ -141,14 +141,14 @@ async function doRun(log: ScraperLogger, opts: RunOpts): Promise<LastRun> {
     const aliveOnly = list.filter((p) => p.alive);
     alive = aliveOnly.length;
 
-    if (aliveOnly.length > 0) {
+    if (list.length > 0) {
       state.progress.phase = "inserting";
       const tenantIds = opts.tenantId
         ? [opts.tenantId]
         : await listAllTenantIds();
 
       for (const tid of tenantIds) {
-        const inserted = await bulkInsert(tid, aliveOnly);
+        const inserted = await bulkUpsert(tid, list);
         insertedByTenant[tid] = inserted;
         if (inserted > 0) {
           await notifyConfigChange(`scraper-job/${tid}`).catch((e) =>
@@ -202,7 +202,7 @@ async function spawnScraper(log: ScraperLogger, opts: RunOpts): Promise<ScrapedP
     "-tui=off",
     "-quiet",
     "-progress",
-    "-alive-only",
+    "-geoip=false",
     `-concurrency=${opts.concurrency ?? DEFAULT_CONCURRENCY}`,
     `-out=${outFile}`,
   ];
@@ -314,8 +314,9 @@ function normalizeLatencyMs(value: number | undefined): number | null {
   return Math.min(ms, MAX_PG_INTEGER);
 }
 
-async function bulkInsert(tenantId: string, list: ScrapedProxy[]): Promise<number> {
+async function bulkUpsert(tenantId: string, list: ScrapedProxy[]): Promise<number> {
   const db = getDb();
+  const runStartedAt = new Date();
   const rows = list
     .filter((p) => ALLOWED_TYPES.has(p.type?.toLowerCase()) && isValidPort(p.port))
     .map((p) => ({
@@ -324,7 +325,8 @@ async function bulkInsert(tenantId: string, list: ScrapedProxy[]): Promise<numbe
       host: p.ip,
       port: p.port,
       source: "scraper" as const,
-      status: "alive" as const,
+      status: p.alive ? ("alive" as const) : ("dead" as const),
+      isActive: p.alive,
       latencyMs: normalizeLatencyMs(p.latency_ms),
       lastCheckedAt: new Date(),
       metadata: p.country_code ? { country_code: p.country_code } : {},
@@ -332,13 +334,45 @@ async function bulkInsert(tenantId: string, list: ScrapedProxy[]): Promise<numbe
 
   if (rows.length === 0) return 0;
 
-  // Drizzle's onConflictDoNothing returns the inserted rows; non-inserted (conflict) rows are skipped.
-  const result = await db
-    .insert(proxies)
-    .values(rows)
-    .onConflictDoNothing({ target: [proxies.tenantId, proxies.type, proxies.host, proxies.port] })
+  let touched = 0;
+  for (let i = 0; i < rows.length; i += 1000) {
+    const chunk = rows.slice(i, i + 1000);
+    const result = await db
+      .insert(proxies)
+      .values(chunk)
+      .onConflictDoUpdate({
+        target: [proxies.tenantId, proxies.type, proxies.host, proxies.port],
+        set: {
+          status: sql`case when ${proxies.source} = 'scraper' then excluded.status else ${proxies.status} end`,
+          isActive: sql`case when ${proxies.source} = 'scraper' then excluded.is_active else ${proxies.isActive} end`,
+          latencyMs: sql`case when ${proxies.source} = 'scraper' then excluded.latency_ms else ${proxies.latencyMs} end`,
+          lastCheckedAt: sql`case when ${proxies.source} = 'scraper' then excluded.last_checked_at else ${proxies.lastCheckedAt} end`,
+          metadata: sql`case when ${proxies.source} = 'scraper' then excluded.metadata else ${proxies.metadata} end`,
+          updatedAt: sql`case when ${proxies.source} = 'scraper' then excluded.updated_at else ${proxies.updatedAt} end`,
+        },
+      })
+      .returning({ id: proxies.id });
+    touched += result.length;
+  }
+
+  const stale = await db
+    .update(proxies)
+    .set({
+      status: "dead",
+      isActive: false,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(proxies.tenantId, tenantId),
+        eq(proxies.source, "scraper"),
+        or(isNull(proxies.lastCheckedAt), lt(proxies.lastCheckedAt, runStartedAt)),
+      ),
+    )
     .returning({ id: proxies.id });
-  return result.length;
+  touched += stale.length;
+
+  return touched;
 }
 
 async function listAllTenantIds(): Promise<string[]> {
@@ -371,7 +405,4 @@ export function stopScraperSchedule() {
   }
 }
 
-// Silence unused-import warning while keeping `sql` available if we ever need
-// raw SQL (e.g. for window-function dedup).
-void sql;
 void tenants;
