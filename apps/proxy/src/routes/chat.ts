@@ -3,6 +3,7 @@ import { createProvider, type ProviderContext } from '../providers/index.js'
 import type { AppConfig } from '../config/index.js'
 import type { ChatRequest, ChatResponse } from '../providers/base.js'
 import { logUsage } from '../metrics/usageLogger.js'
+import { chatUsageWithEstimate } from '../metrics/tokenEstimator.js'
 import type { ConfigSnapshot } from '@ai-gateway/shared'
 import {
   AIG_AUTO_MODEL,
@@ -76,17 +77,6 @@ const chatBodySchema = {
     },
     tool_choice: {},
   },
-}
-
-function parseChatUsage(result: ChatResponse): {
-  promptTokens: number
-  completionTokens: number
-} {
-  const u = result.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-  return {
-    promptTokens: u.prompt_tokens ?? 0,
-    completionTokens: u.completion_tokens ?? 0,
-  }
 }
 
 function findProviderIdBySlug(
@@ -242,7 +232,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
             fastify.log.warn({ deadProviders: meta.deadProviders }, 'Upstream errors detected - providers marked as dead')
           }
           if (request.apiKey) {
-            const u = parseChatUsage(result)
+            const u = chatUsageWithEstimate(chatReq, result)
             logUsage(
               {
                 tenantId: request.apiKey.tenantId,
@@ -259,7 +249,10 @@ export async function chatRoutes(fastify: FastifyInstance) {
                 completionTokens: u.completionTokens,
                 requestBody: request.body,
                 responseBody: result,
-                metadata: meta.deadProviders ? { deadProviders: meta.deadProviders } : undefined,
+                metadata: {
+                  ...(meta.deadProviders ? { deadProviders: meta.deadProviders } : {}),
+                  ...(u.estimated ? { usageEstimated: true } : {}),
+                },
               },
               fastify.log,
             )
@@ -371,7 +364,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
       try {
         const result = await provider.chat(chatReq)
         if (request.apiKey) {
-          const u = parseChatUsage(result)
+          const u = chatUsageWithEstimate(chatReq, result)
           logUsage(
             {
               tenantId: request.apiKey.tenantId,
@@ -388,6 +381,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
               completionTokens: u.completionTokens,
               requestBody: request.body,
               responseBody: result,
+              metadata: u.estimated ? { usageEstimated: true } : undefined,
             },
             fastify.log,
           )

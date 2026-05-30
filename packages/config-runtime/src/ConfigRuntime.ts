@@ -121,6 +121,7 @@ export class ConfigRuntime extends EventEmitter {
         eq(providers.tenantId, tenant.id),
         eq(providers.isActive, true),
       ),
+      orderBy: (p, { asc }) => [asc(p.createdAt), asc(p.slug)],
     });
 
     const providerIds = providerRows.map((p) => p.id);

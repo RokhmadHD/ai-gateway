@@ -40,6 +40,17 @@ const providerInput = z.object({
   config: z.record(z.unknown()).default({}),
 });
 
+function withProviderDefaults(input: z.infer<typeof providerInput>) {
+  const config = { ...input.config };
+  if (input.type === "kiro" && typeof config.account_dir !== "string") {
+    config.account_dir = process.env.KIRO_ACCOUNTS_DIR ?? "/var/kiro-accounts";
+  }
+  if (input.type === "gemini" && typeof config.account_dir !== "string") {
+    config.account_dir = process.env.GEMINI_ACCOUNTS_DIR ?? "/var/gemini-accounts";
+  }
+  return { ...input, config };
+}
+
 export const providersRouter = router({
   list: memberProcedure.query(async ({ ctx }) => {
     const db = getDb();
@@ -66,7 +77,7 @@ export const providersRouter = router({
       const db = getDb();
       const [row] = await db
         .insert(providers)
-        .values({ ...input, tenantId: ctx.admin.tenantId })
+        .values({ ...withProviderDefaults(input), tenantId: ctx.admin.tenantId })
         .returning();
       await notifyConfigChange(`admin/${ctx.admin.user.email}`);
       return row;
@@ -81,9 +92,10 @@ export const providersRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      const patch = input.patch.type ? withProviderDefaults(input.patch as z.infer<typeof providerInput>) : input.patch;
       const [row] = await db
         .update(providers)
-        .set({ ...input.patch, updatedAt: new Date() })
+        .set({ ...patch, updatedAt: new Date() })
         .where(and(eq(providers.id, input.id), eq(providers.tenantId, ctx.admin.tenantId)))
         .returning();
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
