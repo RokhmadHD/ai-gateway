@@ -52,7 +52,7 @@ function Providers() {
       {snap.data && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {(snap.data as { providers: SnapshotProvider[] }).providers.map((p) => (
-            <ProviderCard key={p.id} p={p} />
+            <ProviderCard key={p.id} p={p} onDeleted={() => snap.refetch()} />
           ))}
           <button
             onClick={() => setShowForm(true)}
@@ -79,7 +79,13 @@ function Providers() {
 
 type SnapshotProviderItem = SnapshotProvider;
 
-function ProviderCard({ p }: { p: SnapshotProviderItem }) {
+function ProviderCard({
+  p,
+  onDeleted,
+}: {
+  p: SnapshotProviderItem;
+  onDeleted: () => void;
+}) {
   const isKiro = p.type === "kiro";
   const isGemini = p.type === "gemini";
   const isAccountBased = isKiro || isGemini;
@@ -105,17 +111,19 @@ function ProviderCard({ p }: { p: SnapshotProviderItem }) {
   const activeAccounts = accList.filter((a) => !a.expired && !a.chainDead).length;
   const expiredAccounts = accList.filter((a) => a.expired && !a.chainDead).length;
   const deadAccounts = accList.filter((a) => a.chainDead).length;
+  const del = trpc.providers.delete.useMutation({
+    onSuccess: onDeleted,
+  });
 
   return (
-    <Link
-      href={`/providers/${p.id}`}
-      className="group bg-(--color-bg-elev) border border-(--color-border) rounded-lg p-5 hover:border-(--color-accent)/50 transition-colors flex flex-col"
-    >
+    <div className="group bg-(--color-bg-elev) border border-(--color-border) rounded-lg p-5 hover:border-(--color-accent)/50 transition-colors flex flex-col">
       {/* ───────── card header (name + status + arrow) ───────── */}
       <div className="flex items-start justify-between mb-3">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold">{p.name}</h3>
+            <Link href={`/providers/${p.id}`} className="hover:text-(--color-accent)">
+              <h3 className="font-semibold">{p.name}</h3>
+            </Link>
             <Badge tone={p.isActive ? "success" : "neutral"}>
               {p.isActive ? "active" : "off"}
             </Badge>
@@ -127,7 +135,13 @@ function ProviderCard({ p }: { p: SnapshotProviderItem }) {
           </div>
           <div className="text-xs text-(--color-text-muted) mt-0.5">{p.type}</div>
         </div>
-        <span className="text-(--color-text-muted) group-hover:text-(--color-accent) transition-colors">→</span>
+        <Link
+          href={`/providers/${p.id}`}
+          aria-label={`Open ${p.name}`}
+          className="text-(--color-text-muted) group-hover:text-(--color-accent) transition-colors"
+        >
+          →
+        </Link>
       </div>
 
       {/* ───────── base URL ───────── */}
@@ -234,13 +248,33 @@ function ProviderCard({ p }: { p: SnapshotProviderItem }) {
         </div>
       </div>
 
-      {/* ───────── footer (rotation + short id) ───────── */}
+      {/* ───────── footer (rotation + short id + actions) ───────── */}
       <div className="mt-auto pt-3 border-t border-(--color-border)">
         <div className="text-[11px] text-(--color-text-muted) flex justify-between">
           <span>{p.rotationStrategy.replace("_", " ")}</span>
           <span className="font-mono">{p.id.slice(0, 8)}</span>
         </div>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <Link href={`/providers/${p.id}`} className="text-sm text-(--color-accent) hover:underline">
+            Open
+          </Link>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={del.isPending}
+            onClick={() => {
+              if (confirm(`Delete provider "${p.name}" and all its keys?`)) {
+                del.mutate({ id: p.id });
+              }
+            }}
+          >
+            {del.isPending ? "Deleting…" : "Delete"}
+          </Button>
+        </div>
+        {del.error && (
+          <div className="mt-2 text-xs text-(--color-danger)">{del.error.message}</div>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
