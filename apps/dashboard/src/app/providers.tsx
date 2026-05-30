@@ -10,7 +10,12 @@ function getAdminUrl(): string {
   if (typeof window !== "undefined") {
     const fromEnv = process.env.NEXT_PUBLIC_ADMIN_URL;
     if (fromEnv) return `${fromEnv}/trpc`;
-    if (window.location.port === "" || window.location.port === "80" || window.location.port === "443") {
+    if (
+      window.location.port === "" ||
+      window.location.port === "80" ||
+      window.location.port === "443" ||
+      window.location.port === "7782"
+    ) {
       return `${window.location.origin}/trpc`;
     }
     return `${window.location.protocol}//${window.location.hostname}:7780/trpc`;

@@ -14,6 +14,7 @@ const TYPES = [
   "custom_openai",
   "custom_anthropic",
   "kiro",
+  "gemini",
 ] as const;
 
 const KIRO_MODELS = [
@@ -35,6 +36,7 @@ const DEFAULT_BASE_URL: Record<(typeof TYPES)[number], string> = {
   custom_openai: "",
   custom_anthropic: "",
   kiro: "https://q.us-east-1.amazonaws.com",
+  gemini: "https://cloudcode-pa.googleapis.com",
 };
 
 // Default model hint per provider type, used as placeholder if user leaves blank.
@@ -48,6 +50,7 @@ const DEFAULT_MODEL_HINT: Record<(typeof TYPES)[number], string> = {
   custom_openai: "gpt-3.5-turbo",
   custom_anthropic: "claude-3-5-sonnet-20241022",
   kiro: "claude-sonnet-4.5",
+  gemini: "gemini-3-flash-preview",
 };
 
 export function ProviderForm({ onDone }: { onDone: () => void }) {
@@ -61,6 +64,8 @@ export function ProviderForm({ onDone }: { onDone: () => void }) {
 
   const create = trpc.providers.create.useMutation();
   const isKiro = type === "kiro";
+  const isGemini = type === "gemini";
+  const isAccountBased = isKiro || isGemini;
 
   function onTypeChange(t: (typeof TYPES)[number]) {
     setType(t);
@@ -87,7 +92,7 @@ export function ProviderForm({ onDone }: { onDone: () => void }) {
           await create.mutateAsync({ slug,
             name,
             type,
-            baseUrl: isKiro ? "" : baseUrl,
+            baseUrl: isAccountBased ? DEFAULT_BASE_URL[type] : baseUrl,
             config,
           });
           onDone();
@@ -103,7 +108,7 @@ export function ProviderForm({ onDone }: { onDone: () => void }) {
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
             required
-            placeholder={isKiro ? "kiro" : "openrouter"}
+            placeholder={isKiro ? "kiro" : isGemini ? "gemini" : "openrouter"}
           />
         </label>
         <label className="block">
@@ -112,7 +117,7 @@ export function ProviderForm({ onDone }: { onDone: () => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            placeholder={isKiro ? "Kiro (Amazon Q)" : "OpenRouter"}
+            placeholder={isKiro ? "Kiro (Amazon Q)" : isGemini ? "Gemini Code Assist" : "OpenRouter"}
           />
         </label>
         <label className="block">
@@ -128,7 +133,7 @@ export function ProviderForm({ onDone }: { onDone: () => void }) {
             ))}
           </Select>
         </label>
-        {!isKiro && (
+        {!isAccountBased && (
           <label className="block">
             <div className="text-xs text-(--color-text-muted) mb-1">Base URL</div>
             <Input
@@ -155,6 +160,12 @@ export function ProviderForm({ onDone }: { onDone: () => void }) {
                 </option>
               ))}
             </Select>
+          ) : isGemini ? (
+            <Input
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              placeholder={DEFAULT_MODEL_HINT.gemini}
+            />
           ) : (
             <Input
               value={defaultModel}

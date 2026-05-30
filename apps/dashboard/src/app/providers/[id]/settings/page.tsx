@@ -15,6 +15,7 @@ const TYPES = [
   "custom_openai",
   "custom_anthropic",
   "kiro",
+  "gemini",
 ] as const;
 
 const ROTATION = [
